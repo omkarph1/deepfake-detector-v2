@@ -1,0 +1,24 @@
+# Python (backend)
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+.env
+.env.local
+*.log
+
+# Node.js (frontend)
+node_modules/
+dist/
+
+# Model weights (large files)
+backend/weights/*.pth
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store
+Thumbs.db
