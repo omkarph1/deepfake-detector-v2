@@ -19,11 +19,12 @@ from utils.inference import run_all_models
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173"])
 
+from huggingface_hub import hf_hub_download
+
 # ─── Weight file paths ───────────────────────────────────────────────────────
-WEIGHTS_DIR = os.path.join(os.path.dirname(__file__), "weights")
-CONVNEXT_PATH = os.path.join(WEIGHTS_DIR, "best_convnextv2.pth")
-XCEPTION_PATH = os.path.join(WEIGHTS_DIR, "best_xception.pth")
-RESNEXT_PATH = os.path.join(WEIGHTS_DIR, "best_resnext_bilstm.pth")
+CONVNEXT_PATH = hf_hub_download(repo_id="Omkarpp/deepguard-weights", filename="best_convnextv2.pth")
+XCEPTION_PATH = hf_hub_download(repo_id="Omkarpp/deepguard-weights", filename="best_xception.pth")
+RESNEXT_PATH  = hf_hub_download(repo_id="Omkarpp/deepguard-weights", filename="best_resnext_bilstm.pth")
 
 # ─── Load models at startup ──────────────────────────────────────────────────
 models_loaded = {"convnext": False, "xception": False, "resnext": False}
@@ -208,4 +209,5 @@ def detect():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, threaded=True, debug=False)
+    port = int(os.environ.get("PORT", 7860))
+    app.run(host="0.0.0.0", port=port, debug=False)
