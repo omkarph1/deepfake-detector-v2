@@ -110,10 +110,13 @@ export default function UploadZone({ onResult, onClear }) {
             const formData = new FormData()
             formData.append('file', file)
 
-            const response = await fetch('/api/detect', {
+            // ✅ NEW — points to HF Space backend
+            const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+            const response = await fetch(`${API_URL}/api/detect`, {
                 method: 'POST',
                 body: formData,
             })
+
 
             if (!response.ok) {
                 throw new Error(`Server error: ${response.status}`)
