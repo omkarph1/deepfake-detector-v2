@@ -17,7 +17,7 @@ from utils.mtcnn_extractor import extract_frames
 from utils.inference import run_all_models
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])
+CORS(app, origins="*")
 
 from huggingface_hub import hf_hub_download
 
