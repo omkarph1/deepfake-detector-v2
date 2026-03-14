@@ -87,10 +87,11 @@ export default function Navbar({ isDarkMode, toggleTheme }) {
 
             {/* Mobile Sidebar */}
             <div 
-                className={`fixed top-0 right-0 bottom-0 w-3/4 max-w-sm z-[58] transition-transform duration-300 ease-in-out md:hidden shadow-2xl flex flex-col p-8 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+                className={`fixed top-0 right-0 bottom-0 w-4/5 max-w-sm z-[58] transition-transform duration-300 ease-in-out md:hidden shadow-2xl flex flex-col p-8 backdrop-blur-xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
                 style={{ 
-                    background: isDarkMode ? 'var(--bg)' : '#e0f2fe', // lightblue (sky-100)
-                    borderLeft: `1px solid ${isDarkMode ? 'var(--card-border)' : 'rgba(0,0,0,0.1)'}`
+                    backgroundColor: isDarkMode ? '#0a0a0f' : '#f0f9ff', // Forced solid dark bg or solid sky-50
+                    borderLeft: `1px solid ${isDarkMode ? 'rgba(0, 245, 255, 0.2)' : 'rgba(0, 136, 204, 0.2)'}`,
+                    boxShadow: isDarkMode ? '-10px 0 30px rgba(0,0,0,0.5)' : '-10px 0 30px rgba(0,0,0,0.05)'
                 }}
             >
                 <div className="flex flex-col gap-8 mt-16">
