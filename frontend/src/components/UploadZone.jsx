@@ -107,19 +107,29 @@ export default function UploadZone({ onResult, onClear }) {
         addLog('📤 Uploading video to server...')
 
         try {
+            const sessionId = Math.random().toString(36).substring(2, 10);
             const formData = new FormData()
             formData.append('file', file)
+            formData.append('sessionId', sessionId)
 
             // ✅ NEW — points to HF Space backend
-            const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-            const response = await fetch(`${API_URL}/api/detect`, {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+            
+            // 1. Initiate detection (Accepts file and returns 202)
+            const postResponse = await fetch(`${API_BASE}/api/detect`, {
                 method: 'POST',
                 body: formData,
             })
 
+            if (!postResponse.ok) {
+                const errData = await postResponse.json().catch(() => ({}));
+                throw new Error(errData.error || `Upload failed: ${postResponse.status}`);
+            }
 
+            // 2. Connect to the progress stream
+            const response = await fetch(`${API_BASE}/api/stream/${sessionId}`);
             if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`)
+                throw new Error(`Streaming failed: ${response.status}`);
             }
 
             // Standard approach to read HTTP streams chunk-by-chunk in the browser

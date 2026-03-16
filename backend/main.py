@@ -17,7 +17,11 @@ from utils.mtcnn_extractor import extract_frames
 from utils.inference import run_all_models
 
 app = Flask(__name__)
-CORS(app, origins="*")
+# Allow both local development and production origins
+CORS(app, origins=[
+    "http://localhost:5173",
+    "https://deepfake-detector-v2.vercel.app"
+])
 
 from huggingface_hub import hf_hub_download
 
@@ -75,17 +79,44 @@ def sse_event(event: str, data: dict) -> str:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
+# ─── Global State for Session-based Streaming ───────────────────────────────
+active_streams = {}
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return {"status": "ok", "models": models_loaded}
 
 
+@app.route("/api/stream/<session_id>", methods=["GET"])
+def get_stream(session_id):
+    if session_id not in active_streams:
+        return {"error": "Session not found"}, 404
+    
+    gen = active_streams.pop(session_id)
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+        "Content-Type": "text/event-stream"
+    }
+    return Response(
+        stream_with_context(gen),
+        mimetype="text/event-stream",
+        headers=headers
+    )
+
+
 @app.route("/api/detect", methods=["POST"])
 def detect():
-    if "file" not in request.files:
+    session_id = request.args.get("sessionId") or request.form.get("sessionId")
+    
+    if "video" in request.files:
+        file = request.files["video"]
+    elif "file" in request.files:
+        file = request.files["file"]
+    else:
         return {"error": "No file provided"}, 400
 
-    file = request.files["file"]
     if file.filename == "":
         return {"error": "Empty filename"}, 400
 
@@ -99,7 +130,7 @@ def detect():
     except Exception as e:
         return {"error": f"File save failed: {e}"}, 500
 
-    def generate():
+    def generate(session_id=None):
         try:
             # Stage 0: File received
             yield sse_event("stage", {"stage": 0, "message": "File received", "progress": 5})
@@ -147,23 +178,19 @@ def detect():
             yield sse_event("stage", {"stage": 4, "message": "Aggregating results...", "progress": 85})
 
             # Stage 5: Done - encode EXACTLY 5 frames for frontend display
-            # We want to uniformly sample 5 frames out of the ones extracted to show a representative set
             display_count = 5
             total_extracted = len(frames)
             
             if total_extracted <= display_count:
                 middle_frames = frames
             else:
-                # Create exactly 5 evenly spaced indices.
-                # e.g., for 15 frames: [1, 4, 7, 10, 13]
                 step = total_extracted / display_count
                 indices = [int(step / 2 + i * step) for i in range(display_count)]
                 middle_frames = [frames[i] for i in indices]
 
-            # Convert subset of numpy RGB frames to base64 JPEG strings
             encoded_frames = [frame_to_base64(f) for f in middle_frames]
 
-            # Stage 5: Inform frontend that backend processing is complete
+            # Inform completion
             yield sse_event("stage", {"stage": 5, "message": "Analysis complete!", "progress": 100})
 
             # Final result
@@ -194,6 +221,10 @@ def detect():
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+    if session_id:
+        active_streams[session_id] = generate(session_id)
+        return {"status": "accepted", "sessionId": session_id}, 202
 
     headers = {
         "Cache-Control": "no-cache",
