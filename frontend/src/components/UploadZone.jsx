@@ -126,23 +126,8 @@ export default function UploadZone({ onResult, onClear }) {
                 throw new Error(errData.error || `Upload failed: ${postResponse.status}`);
             }
 
-            // 2. Connect to the progress stream
-            // 2. Wait for backend to register the stream, then connect
-            // Retry fetching stream up to 5 times with 600ms gap
-            let response;
-            for (let i = 0; i < 5; i++) {
-                await new Promise(r => setTimeout(r, 600));
-                response = await fetch(`${API_BASE}/api/stream/${sessionId}`);
-                if (response.ok) break;
-                addLog(`🔄 Connection attempt ${i + 1} failed, retrying...`);
-            }
-
-            if (!response || !response.ok) {
-                throw new Error(`Streaming failed: Could not connect to stream (${response?.status || 'network error'})`);
-            }
-
-            // Standard approach to read HTTP streams chunk-by-chunk in the browser
-            const reader = response.body.getReader()
+            // 2. Connect to the progress stream directly from the POST response
+            const reader = postResponse.body.getReader()
             const decoder = new TextDecoder()
             let buffer = ''
 

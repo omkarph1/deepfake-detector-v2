@@ -79,33 +79,6 @@ def sse_event(event: str, data: dict) -> str:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
-# ─── Global State for Session-based Streaming ───────────────────────────────
-active_streams = {}
-
-@app.route("/api/health", methods=["GET"])
-def health():
-    return {"status": "ok", "models": models_loaded}
-
-
-@app.route("/api/stream/<session_id>", methods=["GET"])
-def get_stream(session_id):
-    if session_id not in active_streams:
-        return {"error": "Session not found"}, 404
-    
-    gen = active_streams.pop(session_id)
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-        "Content-Type": "text/event-stream"
-    }
-    return Response(
-        stream_with_context(gen),
-        mimetype="text/event-stream",
-        headers=headers
-    )
-
-
 @app.route("/api/detect", methods=["POST"])
 def detect():
     session_id = request.args.get("sessionId") or request.form.get("sessionId")
@@ -130,7 +103,7 @@ def detect():
     except Exception as e:
         return {"error": f"File save failed: {e}"}, 500
 
-    def generate(session_id=None):
+    def generate():
         try:
             # Stage 0: File received
             yield sse_event("stage", {"stage": 0, "message": "File received", "progress": 5})
@@ -221,10 +194,6 @@ def detect():
                 os.unlink(tmp_path)
             except Exception:
                 pass
-
-    if session_id:
-        active_streams[session_id] = generate(session_id)
-        return {"status": "accepted", "sessionId": session_id}, 202
 
     headers = {
         "Cache-Control": "no-cache",
