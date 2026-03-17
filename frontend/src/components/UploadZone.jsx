@@ -116,7 +116,7 @@ export default function UploadZone({ onResult, onClear }) {
             const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
             
             // 1. Initiate detection (Accepts file and returns 202)
-            const postResponse = await fetch(`${API_BASE}/api/detect`, {
+            const postResponse = await fetch(`${API_BASE}/api/detect?sessionId=${sessionId}`, {
                 method: 'POST',
                 body: formData,
             })
