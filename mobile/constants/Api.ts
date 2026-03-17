@@ -1,7 +1,8 @@
 export const API = {
   BASE_URL: 'https://Omkarpp-deepguard-api.hf.space',
-  PREDICT: '/predict',
-  HEALTH: '/health',
+  DETECT: '/api/detect',
+  STREAM: '/api/stream',
+  HEALTH: '/api/detect',
 };
 
 const GITHUB_RAW = 'https://raw.githubusercontent.com/omkarph1/deepfake-detector-v2/v2-development/frontend/public/images';

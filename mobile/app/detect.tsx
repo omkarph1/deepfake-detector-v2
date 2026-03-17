@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Dimensions, Platform,
+  ActivityIndicator, Alert, Dimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming,
-  withRepeat, withSequence, withDelay, Easing,
+  withRepeat, withSequence, Easing,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -59,14 +59,14 @@ function PulsingRing({ color }: { color: string }) {
 }
 
 function ProgressBar({ progress }: { progress: number }) {
-  const width = useSharedValue(0);
+  const barWidth = useSharedValue(0);
 
   useEffect(() => {
-    width.value = withTiming(progress, { duration: 500, easing: Easing.out(Easing.cubic) });
+    barWidth.value = withTiming(progress, { duration: 500, easing: Easing.out(Easing.cubic) });
   }, [progress]);
 
   const barStyle = useAnimatedStyle(() => ({
-    width: `${width.value}%` as any,
+    width: `${barWidth.value}%` as any,
   }));
 
   return (
@@ -101,8 +101,11 @@ export default function DetectScreen() {
 
   const checkApiHealth = async () => {
     try {
-      const res = await fetch(`${API.BASE_URL}${API.HEALTH}`, { signal: AbortSignal.timeout(8000) });
-      setApiStatus(res.ok ? 'online' : 'offline');
+      const res = await fetch(`${API.BASE_URL}${API.DETECT}`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(8000),
+      });
+      setApiStatus(res.status < 500 ? 'online' : 'offline');
     } catch {
       setApiStatus('offline');
     }
@@ -138,7 +141,7 @@ export default function DetectScreen() {
     const interval = setInterval(() => {
       if (step < PROGRESS_STEPS.length) {
         setCurrentStep(step);
-        setProgress(Math.round(((step + 1) / PROGRESS_STEPS.length) * 100));
+        setProgress(Math.round(((step + 1) / PROGRESS_STEPS.length) * 90));
         step++;
       } else {
         clearInterval(interval);
@@ -153,7 +156,7 @@ export default function DetectScreen() {
     if (apiStatus === 'offline') {
       Alert.alert(
         'API Offline',
-        'The DeepGuard API is currently unavailable. The HuggingFace Space may be sleeping. Please try again in 30 seconds.',
+        'The DeepGuard API may be sleeping. Please wait 30 seconds and retry.',
         [{ text: 'Retry', onPress: checkApiHealth }, { text: 'Cancel' }]
       );
       return;
@@ -173,37 +176,91 @@ export default function DetectScreen() {
         type: 'video/mp4',
       } as any);
 
-      const response = await fetch(`${API.BASE_URL}${API.PREDICT}`, {
+      // Step 1: POST to /api/detect → get job_id
+      const detectRes = await fetch(`${API.BASE_URL}${API.DETECT}`, {
         method: 'POST',
         body: formData,
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(30000),
       });
 
-      clearInterval(progressInterval);
+      if (!detectRes.ok) throw new Error(`Server error: ${detectRes.status}`);
 
-      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const detectData = await detectRes.json();
 
-      const data = await response.json();
-      setProgress(100);
+      // If backend returned direct result (no streaming)
+      if (detectData.verdict || detectData.result) {
+        clearInterval(progressInterval);
+        setProgress(100);
+        setTimeout(() => {
+          setIsAnalyzing(false);
+          router.push({
+            pathname: '/results',
+            params: {
+              data: JSON.stringify(detectData.result || detectData),
+              videoName,
+            },
+          });
+        }, 500);
+        return;
+      }
 
-      setTimeout(() => {
-        setIsAnalyzing(false);
-        router.push({
-          pathname: '/results',
-          params: { data: JSON.stringify(data), videoName },
-        });
-      }, 500);
+      // Step 2: Poll /api/stream/{job_id} for result
+      const jobId = detectData.job_id || detectData.id;
+      if (!jobId) throw new Error('No job ID returned from server');
+
+      let attempts = 0;
+      const maxAttempts = 40;
+
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const streamRes = await fetch(
+            `${API.BASE_URL}${API.STREAM}/${jobId}`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+
+          if (streamRes.ok) {
+            const streamData = await streamRes.json();
+
+            if (streamData.status === 'done' || streamData.verdict) {
+              clearInterval(pollInterval);
+              clearInterval(progressInterval);
+              setProgress(100);
+              setTimeout(() => {
+                setIsAnalyzing(false);
+                router.push({
+                  pathname: '/results',
+                  params: {
+                    data: JSON.stringify(streamData.result || streamData),
+                    videoName,
+                  },
+                });
+              }, 500);
+            }
+          }
+
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
+            setIsAnalyzing(false);
+            Alert.alert('Timeout', 'Analysis took too long. Please try again.');
+          }
+        } catch {
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
+            setIsAnalyzing(false);
+            Alert.alert('Error', 'Something went wrong while polling results.');
+          }
+        }
+      }, 3000);
 
     } catch (error: any) {
       clearInterval(progressInterval);
       setIsAnalyzing(false);
       setProgress(0);
-      Alert.alert(
-        'Analysis Failed',
-        error.message || 'Something went wrong. Please check your connection and try again.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Analysis Failed', error.message || 'Something went wrong. Please try again.');
     }
   };
 
@@ -226,8 +283,9 @@ export default function DetectScreen() {
         <GlassCard style={styles.statusCard}>
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, {
-              backgroundColor: apiStatus === 'online' ? Colors.real :
-                apiStatus === 'offline' ? Colors.fake : Colors.warning
+              backgroundColor:
+                apiStatus === 'online' ? Colors.real :
+                apiStatus === 'offline' ? Colors.fake : Colors.warning,
             }]} />
             <Text style={styles.statusText}>
               API: {apiStatus === 'online' ? 'Online ✓' : apiStatus === 'offline' ? 'Offline — tap to retry' : 'Checking...'}
@@ -255,7 +313,6 @@ export default function DetectScreen() {
                     </>
                   )}
                 </View>
-
                 {videoUri ? (
                   <View style={styles.fileInfo}>
                     <Text style={styles.fileName} numberOfLines={1}>{videoName}</Text>
@@ -281,17 +338,24 @@ export default function DetectScreen() {
             <Text style={styles.analyzingStep}>{PROGRESS_STEPS[currentStep]}</Text>
             <ProgressBar progress={progress} />
             <Text style={styles.progressText}>{progress}%</Text>
-
             <View style={styles.stepsList}>
               {PROGRESS_STEPS.map((step, i) => (
                 <View key={i} style={styles.stepRow}>
                   <Ionicons
-                    name={i < currentStep ? 'checkmark-circle' : i === currentStep ? 'ellipse' : 'ellipse-outline'}
+                    name={
+                      i < currentStep ? 'checkmark-circle' :
+                      i === currentStep ? 'ellipse' : 'ellipse-outline'
+                    }
                     size={16}
-                    color={i < currentStep ? Colors.real : i === currentStep ? Colors.primary : Colors.textMuted}
+                    color={
+                      i < currentStep ? Colors.real :
+                      i === currentStep ? Colors.primary : Colors.textMuted
+                    }
                   />
                   <Text style={[styles.stepText, {
-                    color: i < currentStep ? Colors.real : i === currentStep ? Colors.textPrimary : Colors.textMuted
+                    color:
+                      i < currentStep ? Colors.real :
+                      i === currentStep ? Colors.textPrimary : Colors.textMuted,
                   }]}>{step}</Text>
                 </View>
               ))}
@@ -377,10 +441,7 @@ const styles = StyleSheet.create({
     width: '100%', height: 6, backgroundColor: Colors.surface,
     borderRadius: 3, overflow: 'hidden', marginBottom: 8,
   },
-  progressFill: {
-    height: '100%', borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
+  progressFill: { height: '100%', borderRadius: 3, backgroundColor: Colors.primary },
   progressText: { fontSize: 13, color: Colors.textSecondary, marginBottom: 24 },
   stepsList: { width: '100%', gap: 10 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
