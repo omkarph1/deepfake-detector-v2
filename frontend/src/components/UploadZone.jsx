@@ -114,7 +114,7 @@ export default function UploadZone({ onResult, onClear }) {
 
             // ✅ NEW — points to HF Space backend
             const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-            
+
             // 1. Initiate detection (Accepts file and returns 202)
             const postResponse = await fetch(`${API_BASE}/api/detect?sessionId=${sessionId}`, {
                 method: 'POST',
@@ -127,7 +127,10 @@ export default function UploadZone({ onResult, onClear }) {
             }
 
             // 2. Connect to the progress stream
+            // 2. Wait for backend to register the stream, then connect
+            await new Promise(resolve => setTimeout(resolve, 800));
             const response = await fetch(`${API_BASE}/api/stream/${sessionId}`);
+
             if (!response.ok) {
                 throw new Error(`Streaming failed: ${response.status}`);
             }
